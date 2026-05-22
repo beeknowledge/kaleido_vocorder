@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Retro Vocoder Voice Changer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div class="badge">Python + Flask + DSP + Realtime Web Audio</div>
+      <h1>Retro Vocoder<br>Voice Changer</h1>
+      <p>
+        声の帯域ごとの音量変化を取り出し、ノコギリ波や矩形波のシンセ音へ掛け合わせる
+        簡易チャンネル・ボコーダーです。アップロード変換と、マイク入力のリアルタイム変換に対応しています。
+      </p>
+    </section>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <section class="card warning">
+          {% for message in messages %}
+            <p>{{ message }}</p>
+          {% endfor %}
+        </section>
+      {% endif %}
+    {% endwith %}
+
+    <section class="card realtimePanel">
+      <div class="sectionTitle">
+        <div>
+          <h2>リアルタイム変換モード</h2>
+          <p>マイク入力をブラウザ内で即時処理します。Flaskは画面配信だけを担当するため、低遅延です。</p>
+        </div>
+        <span id="rtBadge" class="stateBadge off">STOP</span>
+      </div>
+
+      <div class="rtControls">
+        <label>
+          基準音程 Hz
+          <input id="rtBaseFreq" type="range" autocomplete="off" value="110" min="55" max="440" step="1">
+          <span class="value"><b id="rtBaseFreqVal">110</b> Hz</span>
+        </label>
+
+        <label>
+          キャリア音程モード
+          <select id="rtPitchMode" autocomplete="off">
+            <option value="fixed">固定 / 基準音程スライダー</option>
+            <option value="pitch">ピッチ追従 / 声の音程に合わせる(歌える)</option>
+            <option value="midi">MIDI入力 / 鍵盤でキャリアを弾く</option>
+          </select>
+          <span class="hint">ピッチ追従では「基準音程」が歌い出しの声に対応するキャリア音程(ここから声の上下に追従)。MIDIでは移調量になります。</span>
+        </label>
+
+        <label>
+          バンド数
+          <input id="rtBands" type="range" autocomplete="off" value="25" min="8" max="28" step="1">
+          <span class="value"><b id="rtBandsVal">25</b> bands</span>
+        </label>
+
+        <label>
+          キャリア波形
+          <select id="rtTone" autocomplete="off">
+            <option value="saw">Saw / レトロシンセ風</option>
+            <option value="square">Square / 強いロボ声</option>
+            <option value="robot_sine">Sine Mix / 細いロボ声</option>
+            <option value="r2d2">R2-D2 / ピヨピヨ(言葉は判別不可)</option>
+          </select>
+        </label>
+
+        <label>
+          原音ミックス
+          <input id="rtDryMix" type="range" autocomplete="off" value="0" min="0" max="0.20" step="0.01">
+          <span class="value"><b id="rtDryMixVal">0.00</b></span>
+        </label>
+
+        <label>
+          出力音量
+          <input id="rtOutput" type="range" autocomplete="off" value="0.80" min="0" max="1" step="0.01">
+          <span class="value"><b id="rtOutputVal">0.80</b></span>
+        </label>
+
+        <label>
+          ボコーダー感度
+          <input id="rtEnvBoost" type="range" autocomplete="off" value="14" min="4" max="80" step="1">
+          <span class="value"><b id="rtEnvBoostVal">14</b></span>
+          <span class="hint">音が小さい場合は上げます。歪む場合は下げます。</span>
+        </label>
+
+        <label>
+          入力モニター
+          <input id="rtMonitor" type="range" autocomplete="off" value="0" min="0" max="0.6" step="0.01">
+          <span class="value"><b id="rtMonitorVal">0.00</b></span>
+          <span class="hint">マイク音が出るかの確認用。ボコーダーだけにしたい場合は0にします。</span>
+        </label>
+
+        <label>
+          出力先デバイス
+          <select id="rtOutputDevice" autocomplete="off">
+            <option value="">既定の出力(スピーカー/ヘッドホン)</option>
+          </select>
+          <span class="hint">Web会議へ流すには仮想オーディオケーブルの入力を選択。名前が出ないときは一度「リアルタイム開始」してから「出力先を更新」を押します。</span>
+        </label>
+      </div>
+
+      <div class="buttonRow">
+        <button class="subBtn" type="button" id="rtTestBtn">テスト音</button>
+        <button class="subBtn" type="button" id="rtRefreshDevices">出力先を更新</button>
+        <button class="mainBtn small" type="button" id="rtStartBtn">リアルタイム開始</button>
+        <button class="subBtn" type="button" id="rtApplyBtn" disabled>設定を反映</button>
+        <button class="subBtn danger" type="button" id="rtStopBtn" disabled>停止</button>
+      </div>
+
+      <div class="meterWrap">
+        <div class="meterLabel">入力レベル</div>
+        <div class="meter"><div id="rtMeterBar"></div></div>
+        <div id="rtLevelText" class="levelText">入力RMS: -</div>
+      </div>
+
+      <p id="rtStatus" class="hint">
+        ヘッドホン推奨です。音が出ない場合は「テスト音」→「リアルタイム開始」→入力レベル確認の順に切り分けます。localhostまたはHTTPSで動作します。
+      </p>
+    </section>
+
+    <section class="grid">
+      <form class="card" method="post" action="{{ url_for('process') }}" enctype="multipart/form-data">
+        <h2>アップロード変換モード</h2>
+
+        <div class="recorderBox">
+          <button class="subBtn" type="button" id="recordBtn">マイク録音開始</button>
+          <button class="subBtn" type="button" id="stopBtn" disabled>録音停止</button>
+          <p id="recordStatus" class="hint">または、下のファイル選択からWAV/FLAC/OGG/AIFFを指定します。</p>
+          <audio id="previewAudio" controls class="hidden"></audio>
+        </div>
+
+        <label>
+          音声ファイル
+          <input id="audioInput" type="file" name="audio" accept=".wav,.flac,.ogg,.aiff,.aif,audio/*" required>
+        </label>
+
+        <h2>音色パラメータ</h2>
+
+        <label>
+          基準音程 Hz
+          <input type="number" name="base_freq" value="110" min="55" max="440" step="1">
+          <span class="hint">低め: 90〜120 / 高め: 160〜220</span>
+        </label>
+
+        <label>
+          バンド数
+          <input type="number" name="bands" value="16" min="8" max="32" step="1">
+          <span class="hint">少ないほど古い機械っぽく、多いほど言葉が明瞭。</span>
+        </label>
+
+        <label>
+          キャリア波形
+          <select name="tone">
+            <option value="saw">Saw / レトロシンセ風</option>
+            <option value="square">Square / 強いロボ声</option>
+            <option value="robot_sine">Sine Mix / 細いロボ声</option>
+          </select>
+        </label>
+
+        <label>
+          原音ミックス
+          <input type="number" name="dry_mix" value="0.03" min="0" max="0.20" step="0.01">
+          <span class="hint">0.00〜0.08程度。混ぜすぎると普通の声に戻ります。</span>
+        </label>
+
+        <label>
+          明るさ
+          <input type="number" name="brightness" value="1.0" min="0.5" max="1.8" step="0.1">
+        </label>
+
+        <label>
+          ドライブ
+          <input type="number" name="drive" value="1.35" min="0.8" max="3.0" step="0.05">
+        </label>
+
+        <button class="mainBtn" type="submit">変換する</button>
+      </form>
+
+      <aside class="card side">
+        <h2>おすすめ設定</h2>
+        <div class="preset">
+          <h3>古いボコーダー風</h3>
+          <p>base_freq=110 / bands=12〜16 / tone=Saw / dry_mix=0.02</p>
+        </div>
+        <div class="preset">
+          <h3>強めロボ声</h3>
+          <p>base_freq=100 / bands=10〜14 / tone=Square / dry_mix=0.00</p>
+        </div>
+        <div class="preset">
+          <h3>聞き取りやすさ優先</h3>
+          <p>base_freq=130 / bands=20〜24 / tone=Saw / dry_mix=0.05</p>
+        </div>
+        <p class="note">
+          リアルタイム変換はブラウザ内処理です。サーバーへ音声を送らないので軽い反面、録音保存はしません。
+          保存したい場合はアップロード変換モードを使ってください。
+        </p>
+      </aside>
+    </section>
+
+    {% if result_url %}
+      <section class="card result">
+        <h2>変換結果</h2>
+        <audio controls src="{{ result_url }}"></audio>
+        <a class="download" href="{{ result_url }}" download>WAVをダウンロード</a>
+      </section>
+    {% endif %}
+  </main>
+
+  <script src="{{ url_for('static', filename='js/recorder.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/realtime_vocoder.js') }}"></script>
+</body>
+</html>
