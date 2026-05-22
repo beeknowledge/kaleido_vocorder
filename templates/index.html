@@ -149,7 +149,7 @@
 
         <label>
           バンド数
-          <input type="number" name="bands" value="16" min="8" max="32" step="1">
+          <input type="number" name="bands" value="25" min="8" max="28" step="1">
           <span class="hint">少ないほど古い機械っぽく、多いほど言葉が明瞭。</span>
         </label>
 
@@ -159,12 +159,13 @@
             <option value="saw">Saw / レトロシンセ風</option>
             <option value="square">Square / 強いロボ声</option>
             <option value="robot_sine">Sine Mix / 細いロボ声</option>
+            <option value="r2d2">R2-D2 / ピヨピヨ(言葉は判別不可)</option>
           </select>
         </label>
 
         <label>
           原音ミックス
-          <input type="number" name="dry_mix" value="0.03" min="0" max="0.20" step="0.01">
+          <input type="number" name="dry_mix" value="0" min="0" max="0.20" step="0.01">
           <span class="hint">0.00〜0.08程度。混ぜすぎると普通の声に戻ります。</span>
         </label>
 

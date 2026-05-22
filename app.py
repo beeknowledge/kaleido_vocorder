@@ -65,7 +65,7 @@ def lowpass(cut_hz: float, fs: int, order: int = 2) -> np.ndarray:
     return signal.butter(order, cut_hz / nyq, btype="lowpass", output="sos")
 
 
-def make_carrier(t: np.ndarray, base_freq: float, tone: str) -> np.ndarray:
+def make_carrier(t: np.ndarray, base_freq: float, tone: str, fs: int) -> np.ndarray:
     base_freq = float(np.clip(base_freq, 55.0, 440.0))
 
     if tone == "square":
@@ -81,6 +81,29 @@ def make_carrier(t: np.ndarray, base_freq: float, tone: str) -> np.ndarray:
             + 0.65 * np.sin(2 * np.pi * base_freq * 2.0 * t)
             + 0.35 * np.sin(2 * np.pi * base_freq * 3.0 * t)
         )
+    elif tone == "r2d2":
+        # R2-D2風: 細いホイッスルの音程をランダムに跳ね回らせる(ピヨピヨ/ピュイーン)。
+        rng = np.random.default_rng()
+        ratios = np.array([2.5, 3.2, 4.0, 5.0, 6.3, 8.0, 10.0, 12.5, 16.0])
+        n = len(t)
+        freq_curve = np.empty(n, dtype=np.float64)
+        cur = base_freq * 4.0
+        idx = 0
+        while idx < n:
+            seg = max(2, int((0.07 + rng.random() * 0.22) * fs))
+            target = base_freq * float(rng.choice(ratios))
+            end = min(idx + seg, n)
+            glide_tc = max(1.0, (0.01 + rng.random() * 0.12) * fs)
+            k = 1.0 - np.exp(-np.arange(end - idx) / glide_tc)
+            freq_curve[idx:end] = cur + (target - cur) * k
+            cur = float(freq_curve[end - 1])
+            idx = end
+        # 軽いビブラートを掛け、周波数を安全域にクリップする
+        freq_curve *= 1.0 + 0.03 * np.sin(2 * np.pi * 6.2 * t)
+        freq_curve = np.clip(freq_curve, 80.0, min(5000.0, fs * 0.45))
+        # 瞬時周波数を積分して位相を作り、ホイッスル波形を生成する
+        phase = 2.0 * np.pi * np.cumsum(freq_curve) / float(fs)
+        carrier = np.sin(phase) + 0.25 * np.sin(2.0 * phase)
     else:
         # saw: レトロシンセ感。少しデチューンして厚みを出す。
         carrier = (
@@ -120,7 +143,7 @@ def vocoder(
     speech_hp = safe_filter(hp, speech)
 
     t = np.arange(len(speech_hp), dtype=np.float32) / fs
-    carrier = make_carrier(t, base_freq, tone)
+    carrier = make_carrier(t, base_freq, tone, int(fs))
 
     # 古いチャンネル・ボコーダー風に対数間隔で帯域分割
     low = 90.0
