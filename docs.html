@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kaleido Vocoder — システム説明</title>
+<style>
+  :root{
+    --bg:#ffffff; --panel:#f4f6f9; --panel2:#e9ecf2;
+    --text:#1b1e27; --muted:#4a515f; --accent:#0a6c7a; --accent2:#a8540f;
+    --border:#cdd3dd; --code:#f0f2f5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
+    line-height:1.85;font-size:16px;}
+  .wrap{max-width:940px;margin:0 auto;padding:0 22px 96px;}
+  header.hero{padding:54px 22px 40px;text-align:center;
+    background:radial-gradient(900px 320px at 50% -40px,#d6edf0 0%,transparent 70%);}
+  .badge{display:inline-block;font-size:12px;letter-spacing:.14em;
+    color:var(--accent);border:1px solid var(--accent);border-radius:999px;
+    padding:5px 14px;margin-bottom:18px;text-transform:uppercase;font-weight:600;}
+  h1{font-size:34px;margin:.1em 0 .25em;letter-spacing:.02em;color:var(--text);}
+  .lead{color:var(--muted);max-width:640px;margin:0 auto;}
+  h2{font-size:22px;margin:46px 0 14px;padding-bottom:8px;
+    border-bottom:2px solid var(--border);color:var(--text);}
+  h3{font-size:16px;margin:26px 0 8px;color:var(--accent);font-weight:700;}
+  a{color:var(--accent);}
+  p{margin:.5em 0;}
+  ul{padding-left:1.3em;}
+  li{margin:.25em 0;}
+  strong{color:#0d1016;}
+  code{background:var(--code);border:1px solid var(--border);border-radius:4px;
+    padding:1px 6px;font-size:13.5px;color:#9a3209;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;}
+  pre{background:var(--code);border:1px solid var(--border);border-radius:10px;
+    padding:16px 18px;overflow-x:auto;font-size:13px;line-height:1.6;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;color:#1b1e27;}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;
+    padding:18px 22px;margin:16px 0;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:680px){.grid2{grid-template-columns:1fr;}}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14.5px;}
+  th,td{border:1px solid var(--border);padding:8px 11px;text-align:left;
+    vertical-align:top;}
+  th{background:var(--panel2);color:var(--accent);font-weight:700;}
+  tr:nth-child(even) td{background:var(--panel);}
+  .toc{background:var(--panel);border:1px solid var(--border);border-radius:12px;
+    padding:14px 22px;columns:2;column-gap:32px;}
+  @media(max-width:680px){.toc{columns:1;}}
+  .toc a{display:block;color:var(--text);text-decoration:none;padding:3px 0;font-weight:500;}
+  .toc a:hover{color:var(--accent);}
+  .note{border-left:4px solid var(--accent2);background:#fdf1e1;
+    padding:10px 16px;border-radius:0 8px 8px 0;margin:14px 0;color:var(--text);}
+  .muted{color:var(--muted);}
+  footer{text-align:center;color:var(--muted);font-size:13px;
+    margin-top:60px;padding-top:24px;border-top:1px solid var(--border);}
+  .pill{display:inline-block;font-size:12px;background:var(--panel2);
+    border:1px solid var(--border);border-radius:6px;padding:2px 9px;
+    margin:2px 3px 2px 0;color:var(--text);}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="badge">Python + Flask + Web Audio</div>
+  <h1>Kaleido Vocoder</h1>
+  <p class="lead">声を帯域ごとの音量変化に分解し、シンセ音へ掛け合わせる
+  チャンネル・ボコーダー型ボイスチェンジャー。ファイルのアップロード変換と、
+  マイクのリアルタイム変換に対応します。</p>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc">
+    <a href="#overview">1. システム概要</a>
+    <a href="#structure">2. 構成とファイル</a>
+    <a href="#upload">3. アップロード変換モード</a>
+    <a href="#realtime">4. リアルタイム変換モード</a>
+    <a href="#features">5. リアルタイムの主な機能</a>
+    <a href="#params">6. パラメータ一覧</a>
+    <a href="#usage">7. 使い方</a>
+    <a href="#meeting">8. Web会議で使う</a>
+    <a href="#limits">9. 制限事項と注意</a>
+    <a href="#presets">10. おすすめ設定</a>
+  </nav>
+
+  <h2 id="overview">1. システム概要</h2>
+  <p>Kaleido Vocoder は、入力した声から「どの周波数帯域がどれくらい鳴っているか」
+  という時間変化(包絡)だけを取り出し、ノコギリ波などのシンセ音(キャリア)へ
+  掛け合わせることで、ロボット声・レトロシンセ声を作るシステムです。
+  動作モードは2つあります。</p>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">アップロード変換モード</h3>
+      <p class="muted" style="margin:0">音声ファイルをサーバへ送り、Python(SciPy)で
+      高品質に一括変換して WAV を返す。録画・配布向け。</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">リアルタイム変換モード</h3>
+      <p class="muted" style="margin:0">マイク入力をブラウザ内(Web Audio API)で
+      即時変換。サーバへ音声を送らず低遅延。実演・会議向け。</p>
+    </div>
+  </div>
+
+  <h2 id="structure">2. 構成とファイル</h2>
+  <p>Flask(Python)が画面とアップロード変換を担当し、リアルタイム変換は
+  ブラウザの JavaScript が単独で処理します。</p>
+  <pre>kaleido_vocorder/
+├── app.py                  Flask本体 / アップロード変換のDSP(SciPy)
+├── requirements.txt        依存パッケージ
+├── run.sh                  起動スクリプト
+├── README.md
+├── templates/
+│   └── index.html          画面(UI)
+├── static/
+│   ├── css/style.css       スタイル
+│   └── js/
+│       ├── recorder.js          アップロード用ブラウザ録音→WAV化
+│       └── realtime_vocoder.js  リアルタイム変換の全DSP
+├── uploads/                アップロード/録音の一時保存
+└── outputs/                変換結果のWAV</pre>
+
+  <h2 id="upload">3. アップロード変換モード</h2>
+  <p>WAV / FLAC / OGG / AIFF を受け取り、サーバ側(<code>app.py</code>)で変換します。
+  オフライン処理のため、未来のサンプルも使える高品質な手法を採用しています。</p>
+  <h3>処理の流れ</h3>
+  <ul>
+    <li>音声をモノラル化・正規化し、低域のゴロつきをハイパスで除去</li>
+    <li>90Hz〜約7kHz を<strong>対数間隔</strong>で 8〜32 バンドに分割</li>
+    <li>各バンドを Butterworth バンドパス + <code>sosfiltfilt</code>(<strong>ゼロ位相</strong>)で抽出</li>
+    <li><strong>ヒルベルト変換</strong>で正確な包絡を取得 → 平滑化 → 平方根圧縮 →
+        パーセンタイル正規化(バンドごとの音量バランスを揃える)</li>
+    <li>キャリア波(Saw / Square / Sine Mix)を同じ帯域に分割し、包絡を掛けて加算</li>
+    <li>少量の原音をミックス → <code>tanh</code> サチュレーション → 正規化</li>
+    <li>16bit PCM の WAV として保存・再生(最大90秒)</li>
+  </ul>
+  <p class="muted">対応形式: WAV / FLAC / OGG / AIFF。MP3 は ffmpeg で WAV に変換してから使用します。</p>
+
+  <h2 id="realtime">4. リアルタイム変換モード</h2>
+  <p>ブラウザのマイク入力を Web Audio API のノードグラフで即時処理します。
+  サーバへ音声を送らないため低遅延で、Flask は画面配信のみを担当します。</p>
+  <h3>信号の流れ</h3>
+  <pre>マイク ─▶ ハイパス55Hz ─┬─▶ [25バンド] バンドパス→整流→平滑化→感度 ─┐
+                        │                              (各バンドの包絡)│
+                        │   キャリア(シンセ)──▶ バンドパス ──▶ ゲイン◀┘
+                        │                                        │
+                        └─▶ 子音補助(3.8kHz以上・自己ゲート)─────┤
+                                                                  ▼
+              合算 ─▶ コンプレッサ ─▶ ソフトクリップ ─▶ マスターゲート
+                  ─▶ 高音ダンプ ─▶ 出力音量 ─▶ 出力デバイス</pre>
+  <p>各バンドでは、声の包絡(音量の時間変化)がキャリア帯域のゲインを変調します。
+  これにより、声の音色の動きだけがシンセ音に乗り移ります。</p>
+
+  <h2 id="features">5. リアルタイムの主な機能</h2>
+
+  <h3>マスターノイズゲート</h3>
+  <p>入力全体の音量(RMS)を監視し、無音時は変換音をミュート、発話時に開きます。
+  しきい値はマイクのノイズフロアに自動追従。<strong>帯域ごとには手を加えない</strong>ため、
+  開いている間の発話の明瞭度・音色バランスは損なわれません。</p>
+
+  <h3>子音明瞭度の補助</h3>
+  <p>「サ・シュ・タ・カ」などの子音はハーモニックなキャリアでは再現できません。
+  そこで声の <strong>3.8kHz 以上の高域だけ</strong>を取り出し、それ自身の包絡でゲートして
+  混ぜています。母音やピッチ成分を含まないので「生声」には聞こえず、無音時は閉じます。</p>
+
+  <h3>フィルタ精度</h3>
+  <p>各バンドのバンドパスと包絡の平滑化を<strong>2段カスケード</strong>化し、
+  帯域の分離を高めて混信・濁りを低減しています。</p>
+
+  <h3>キャリア音程モード</h3>
+  <table>
+    <tr><th>モード</th><th>動作</th></tr>
+    <tr><td>固定</td><td>「基準音程」スライダーの音程でキャリアが鳴る。一定のロボ声。</td></tr>
+    <tr><td>ピッチ追従</td><td>声の基本周波数を検出し、キャリアを追従させる。歌のメロディが
+        ロボ声で出る。追従開始時の声を基準に、そこからの<strong>相対変化</strong>で動く。</td></tr>
+    <tr><td>MIDI入力</td><td>MIDIキーボードでキャリアの音程を演奏する(Web MIDI API)。</td></tr>
+  </table>
+
+  <h3>R2-D2 モード</h3>
+  <p>キャリア波形で「R2-D2 / ピヨピヨ」を選ぶと、細いホイッスル音を
+  ランダムな音程シーケンサで「ピッ」「ピュイーン」と動かすドロイド風モードになります。
+  声の内容(言葉)は再現せず、話すリズムにだけ反応します。</p>
+
+  <h3>高音ハウリング抑制</h3>
+  <p>キャリアの基本周波数が高いほど出力を漸減し、帰還(ハウリング)ループの利得を
+  下げます。350Hz 以下は等倍、それ以上で段階的に減衰します。</p>
+
+  <h3>出力デバイス選択</h3>
+  <p><code>AudioContext.setSinkId()</code> により、変換音の出力先デバイスを選べます。
+  仮想オーディオケーブルを選べば、Web会議アプリへ変換音を渡せます(第8章)。</p>
+
+  <h2 id="params">6. パラメータ一覧(リアルタイム)</h2>
+  <table>
+    <tr><th>項目</th><th>範囲 / 既定</th><th>説明</th></tr>
+    <tr><td>基準音程</td><td>55–440 Hz / 110</td><td>固定モードのキャリア音程。
+        ピッチ追従では基準ピッチ、MIDIでは移調量。</td></tr>
+    <tr><td>キャリア音程モード</td><td>固定 / ピッチ追従 / MIDI</td><td>キャリアの音程を何で決めるか。</td></tr>
+    <tr><td>バンド数</td><td>8–28 / 25</td><td>多いほど言葉が明瞭、少ないほど機械的。</td></tr>
+    <tr><td>キャリア波形</td><td>Saw / Square / Sine Mix / R2-D2</td><td>シンセ音の種類。</td></tr>
+    <tr><td>原音ミックス</td><td>0–0.20 / 0</td><td>原音を混ぜる量。混ぜすぎると普通の声に戻る。</td></tr>
+    <tr><td>出力音量</td><td>0–1 / 0.80</td><td>最終出力レベル。</td></tr>
+    <tr><td>ボコーダー感度</td><td>4–80 / 14</td><td>包絡の増幅量。小さいと静か、大きいと歪む。</td></tr>
+    <tr><td>入力モニター</td><td>0–0.6 / 0</td><td>生マイク音を出す量(動作確認用)。</td></tr>
+    <tr><td>出力先デバイス</td><td>既定 / 任意</td><td>変換音を送る出力デバイス。</td></tr>
+  </table>
+
+  <h2 id="usage">7. 使い方</h2>
+  <h3>起動</h3>
+  <pre>cd kaleido_vocorder
+python -m venv .venv
+# Windows: .venv\Scripts\activate   /   macOS・Linux: source .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+# ブラウザで http://127.0.0.1:5000 を開く</pre>
+  <h3>アップロード変換</h3>
+  <ul>
+    <li>音声ファイルを選択(またはマイク録音ボタンでその場録音)</li>
+    <li>音色パラメータを設定して「変換する」</li>
+    <li>結果を再生・ダウンロード</li>
+  </ul>
+  <h3>リアルタイム変換</h3>
+  <ul>
+    <li>「リアルタイム開始」→ マイク許可を承認</li>
+    <li>入力レベルメーターが動くか確認(<code>GATE開/閉</code>表示で開閉が分かる)</li>
+    <li>波形・バンド数を変えたら「設定を反映」。音量・感度等はリアルタイム反映</li>
+  </ul>
+  <div class="note"><strong>localhost または HTTPS</strong> でのみマイクが使えます。
+  ハウリング防止のため<strong>ヘッドホン推奨</strong>です。</div>
+
+  <h2 id="meeting">8. Web会議で使う</h2>
+  <p>Zoom / Teams 等へ変換音を渡すには、<strong>仮想オーディオケーブル</strong>
+  (Windows: VB-CABLE、macOS: BlackHole 等)を橋渡しに使います。</p>
+  <pre>マイク ─▶ ブラウザ(本アプリで変換)─▶ 仮想ケーブル ─▶ Zoom のマイク</pre>
+  <ul>
+    <li>仮想オーディオケーブルをインストール</li>
+    <li>本アプリの「出力先デバイス」で <span class="pill">CABLE Input</span>(再生側)を選択</li>
+    <li>Zoom / Teams のマイクで <span class="pill">CABLE Output</span>(録音側)を選択</li>
+    <li>会議アプリ側のノイズ抑制・エコーキャンセルはオフ推奨</li>
+  </ul>
+  <p class="muted">名前が紛らわしいですが、アプリが選ぶのは「CABLE <em>Input</em>」
+  (ケーブルへ音を入れる=OS上は再生デバイス)です。「CABLE Output」は Zoom 側で選びます。</p>
+
+  <h2 id="limits">9. 制限事項と注意</h2>
+  <ul>
+    <li><strong>音質</strong> — リアルタイムは低遅延と引き換えに、アップロード版
+      (オフラインのヒルベルト包絡・ゼロ位相フィルタ・帯域正規化)より簡略化されています。</li>
+    <li><strong>背景タブ</strong> — ピッチ追従・マスターゲート・R2-D2 の制御は
+      ブラウザの描画タイミングで動くため、タブを背面にすると間引かれて止まります。
+      会議用途では本アプリのタブを前面に保つか、固定モードの利用を推奨します。</li>
+    <li><strong>ハウリング</strong> — スピーカー併用時はマイクが出力を拾います。
+      ヘッドホン使用が根本対策です。</li>
+    <li><strong>対応ブラウザ</strong> — Chrome / Edge 系を推奨。MIDI入力・出力デバイス選択は
+      これらでのみ動作します。</li>
+    <li><strong>音程</strong> — ピッチ追従は単音のみ。和音は検出できません。</li>
+  </ul>
+
+  <h2 id="presets">10. おすすめ設定</h2>
+  <table>
+    <tr><th>狙い</th><th>設定</th></tr>
+    <tr><td>古いボコーダー風</td><td>基準音程 100–120 / バンド数 12–16 / Saw / 原音 0.00–0.03</td></tr>
+    <tr><td>強いロボ声</td><td>基準音程 90–110 / バンド数 10–14 / Square / 原音 0.00</td></tr>
+    <tr><td>聞き取りやすさ優先</td><td>基準音程 120–150 / バンド数 20–25 / Saw / 原音 0.04–0.08</td></tr>
+    <tr><td>歌う</td><td>キャリア音程モード = ピッチ追従 / Saw / バンド数 20–25</td></tr>
+    <tr><td>ドロイド声</td><td>キャリア波形 = R2-D2(他パラメータの影響は小)</td></tr>
+  </table>
+
+  <footer>
+    Kaleido Vocoder — システム説明ドキュメント<br>
+    リポジトリ: github.com/beeknowledge/kaleido_vocorder<br>
+    ライセンス: MIT License — Copyright (c) 2026 beeknowledge
+  </footer>
+
+</div>
+</body>
+</html>
